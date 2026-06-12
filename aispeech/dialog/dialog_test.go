@@ -254,7 +254,7 @@ func newDialogAPITestServer(t *testing.T) *httptest.Server {
 	}))
 }
 
-func handleDialogToken(t *testing.T, w http.ResponseWriter, r *http.Request) {
+func handleDialogToken(t *testing.T, w io.Writer, r *http.Request) {
 	t.Helper()
 	if r.Header.Get("X-APPID") != testAppID {
 		t.Fatalf("bad X-APPID: %s", r.Header.Get("X-APPID"))
@@ -262,7 +262,7 @@ func handleDialogToken(t *testing.T, w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(accessTokenResponse(testTokenRequestID)))
 }
 
-func handleDialogImport(t *testing.T, w http.ResponseWriter, r *http.Request, body []byte) {
+func handleDialogImport(t *testing.T, w io.Writer, r *http.Request, body []byte) {
 	t.Helper()
 	assertToken(t, r)
 	var req ImportJSONRequest
@@ -275,7 +275,7 @@ func handleDialogImport(t *testing.T, w http.ResponseWriter, r *http.Request, bo
 	_, _ = w.Write([]byte(`{"code":0,"msg":"success","request_id":"import-rid","data":{"task_id":"task-import"}}`))
 }
 
-func handleDialogPublish(t *testing.T, w http.ResponseWriter, r *http.Request, body []byte) {
+func handleDialogPublish(t *testing.T, w io.Writer, r *http.Request, body []byte) {
 	t.Helper()
 	assertToken(t, r)
 	if len(body) != 0 {
@@ -284,7 +284,7 @@ func handleDialogPublish(t *testing.T, w http.ResponseWriter, r *http.Request, b
 	_, _ = w.Write([]byte(`{"code":0,"msg":"success","request_id":"publish-rid","data":{"task_id":"task-publish"}}`))
 }
 
-func handleDialogQuery(t *testing.T, w http.ResponseWriter, r *http.Request, body []byte) {
+func handleDialogQuery(t *testing.T, w io.Writer, r *http.Request, body []byte) {
 	t.Helper()
 	assertToken(t, r)
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "text/plain") {
