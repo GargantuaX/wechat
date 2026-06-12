@@ -20,12 +20,14 @@ type staticAccessTokenContext struct {
 	token string
 }
 
+type contextTokenKey struct{}
+
 func (s staticAccessTokenContext) GetAccessToken() (string, error) {
 	return s.GetAccessTokenContext(stdcontext.Background())
 }
 
 func (s staticAccessTokenContext) GetAccessTokenContext(ctx stdcontext.Context) (string, error) {
-	if v := ctx.Value("token"); v != nil {
+	if v := ctx.Value(contextTokenKey{}); v != nil {
 		return v.(string), nil
 	}
 	return s.token, nil
@@ -48,7 +50,7 @@ func TestSetAccessTokenContextHandle(t *testing.T) {
 	ai := NewAISpeech(&config.Config{Cache: cache.NewMemory()})
 	ai.SetAccessTokenContextHandle(staticAccessTokenContext{token: "custom-token"})
 
-	ctx := stdcontext.WithValue(stdcontext.Background(), "token", "context-token")
+	ctx := stdcontext.WithValue(stdcontext.Background(), contextTokenKey{}, "context-token")
 	token, err := ai.GetAccessTokenContext(ctx)
 	if err != nil {
 		t.Fatalf("GetAccessTokenContext error: %v", err)

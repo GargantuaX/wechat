@@ -16,7 +16,20 @@ import (
 	"github.com/silenceper/wechat/v2/cache"
 )
 
-const testAESKey = "q1Os1ZMe0nG28KUEx9lg3HjK7V5QyXvi212fzsgDqgz"
+const (
+	testAccessToken    = "access-token"
+	testAccount        = "admin"
+	testAESKey         = "q1Os1ZMe0nG28KUEx9lg3HjK7V5QyXvi212fzsgDqgz"
+	testAppID          = "appid"
+	testImportRequest  = "import-rid"
+	testImportTaskID   = "task-import"
+	testPublishTaskID  = "task-publish"
+	testQuery          = "hello"
+	testQueryAnswer    = "hello answer"
+	testQueryRequestID = "query-rid"
+	testToken          = "token"
+	testTokenRequestID = "token-rid"
+)
 
 type emptyAccessTokenHandle struct{}
 
@@ -33,18 +46,18 @@ func TestAccessTokenCache(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tokenRequests++
 		body := readBody(t, r)
-		assertSign(t, r, "token", body)
-		if r.Header.Get("X-APPID") != "appid" {
+		assertSign(t, r, testToken, body)
+		if r.Header.Get("X-APPID") != testAppID {
 			t.Fatalf("bad X-APPID: %s", r.Header.Get("X-APPID"))
 		}
-		_, _ = w.Write([]byte(`{"code":0,"msg":"success","request_id":"rid","data":{"access_token":"access-token"}}`))
+		_, _ = w.Write([]byte(accessTokenResponse("rid")))
 	}))
 	defer srv.Close()
 
 	ak := NewAccessToken(&config.Config{
-		AppID:   "appid",
-		Token:   "token",
-		Account: "admin",
+		AppID:   testAppID,
+		Token:   testToken,
+		Account: testAccount,
 		BaseURL: srv.URL,
 		Cache:   cache.NewMemory(),
 	})
@@ -53,14 +66,14 @@ func TestAccessTokenCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAccessToken error: %v", err)
 	}
-	if token != "access-token" {
+	if token != testAccessToken {
 		t.Fatalf("bad token: %s", token)
 	}
 	token, err = ak.GetAccessToken()
 	if err != nil {
 		t.Fatalf("GetAccessToken second error: %v", err)
 	}
-	if token != "access-token" {
+	if token != testAccessToken {
 		t.Fatalf("bad token second: %s", token)
 	}
 	if tokenRequests != 1 {
@@ -73,31 +86,23 @@ func TestAccessTokenCacheByAccount(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tokenRequests++
 		body := readBody(t, r)
-		assertSign(t, r, "token", body)
+		assertSign(t, r, testToken, body)
 
 		var req AccessTokenRequest
 		if err := json.Unmarshal(body, &req); err != nil {
 			t.Fatalf("bad token body: %v", err)
 		}
-		_, _ = w.Write([]byte(`{"code":0,"msg":"success","request_id":"rid","data":{"access_token":"` + req.Account + `-token"}}`))
+		_, _ = w.Write([]byte(accountAccessTokenResponse(req.Account)))
 	}))
 	defer srv.Close()
 
 	memory := cache.NewMemory()
-	cfgA := &config.Config{
-		AppID:   "appid",
-		Token:   "token",
-		Account: "admin-a",
-		BaseURL: srv.URL,
-		Cache:   memory,
-	}
-	cfgB := &config.Config{
-		AppID:   "appid",
-		Token:   "token",
-		Account: "admin-b",
-		BaseURL: srv.URL,
-		Cache:   memory,
-	}
+	cfgA := testDialogConfig(srv.URL)
+	cfgA.Account = "admin-a"
+	cfgA.Cache = memory
+	cfgB := testDialogConfig(srv.URL)
+	cfgB.Account = "admin-b"
+	cfgB.Cache = memory
 
 	tokenA, err := NewAccessToken(cfgA).GetAccessToken()
 	if err != nil {
@@ -122,8 +127,8 @@ func TestAccessTokenEmptyToken(t *testing.T) {
 	defer srv.Close()
 
 	ak := NewAccessToken(&config.Config{
-		AppID:   "appid",
-		Token:   "token",
+		AppID:   testAppID,
+		Token:   testToken,
 		BaseURL: srv.URL,
 		Cache:   cache.NewMemory(),
 	})
@@ -134,110 +139,15 @@ func TestAccessTokenEmptyToken(t *testing.T) {
 }
 
 func TestDialogAPIs(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body := readBody(t, r)
-		assertSign(t, r, "token", body)
-		switch r.URL.Path {
-		case "/v2/token":
-			if r.Header.Get("X-APPID") != "appid" {
-				t.Fatalf("bad X-APPID: %s", r.Header.Get("X-APPID"))
-			}
-			_, _ = w.Write([]byte(`{"code":0,"msg":"success","request_id":"token-rid","data":{"access_token":"access-token"}}`))
-		case "/v2/bot/import/json":
-			assertToken(t, r)
-			var req ImportJSONRequest
-			if err := json.Unmarshal(body, &req); err != nil {
-				t.Fatalf("bad import body: %v", err)
-			}
-			if len(req.Data) != 1 || req.Data[0].Skill != "售前咨询" {
-				t.Fatalf("bad import request: %+v", req)
-			}
-			_, _ = w.Write([]byte(`{"code":0,"msg":"success","request_id":"import-rid","data":{"task_id":"task-import"}}`))
-		case "/v2/bot/publish":
-			assertToken(t, r)
-			if len(body) != 0 {
-				t.Fatalf("publish body should be empty: %s", body)
-			}
-			_, _ = w.Write([]byte(`{"code":0,"msg":"success","request_id":"publish-rid","data":{"task_id":"task-publish"}}`))
-		case "/v2/bot/effective_progress":
-			assertToken(t, r)
-			_, _ = w.Write([]byte(`{"code":0,"msg":"success","request_id":"progress-rid","data":{"end_time":"","progress":100,"status":1}}`))
-		case "/v2/async/fetch":
-			assertToken(t, r)
-			_, _ = w.Write([]byte(`{"code":0,"msg":"success","request_id":"fetch-rid","data":{"state":2,"msg":"","progress":100,"start":1,"end":2,"url":"","success_skill_info":[{"id":1,"name":"AAA","intents":[{"id":2,"name":"BBB"}]}]}}`))
-		case "/v2/bot/query":
-			assertToken(t, r)
-			if !strings.HasPrefix(r.Header.Get("Content-Type"), "text/plain") {
-				t.Fatalf("bad content type: %s", r.Header.Get("Content-Type"))
-			}
-			plain, err := encryptor.Decrypt(testAESKey, string(body))
-			if err != nil {
-				t.Fatalf("decrypt query body error: %v", err)
-			}
-			var req QueryRequest
-			if err = json.Unmarshal(plain, &req); err != nil {
-				t.Fatalf("bad query body: %v", err)
-			}
-			if req.Query != "你好" {
-				t.Fatalf("bad query: %+v", req)
-			}
-			cipherText, err := encryptor.Encrypt(testAESKey, []byte(`{"code":0,"msg":"success","request_id":"query-rid","data":{"answer":"你好呀","answer_type":"text","skill_name":"skill","intent_name":"intent","msg_id":"msg","status":"FAQ","slots":[{"name":"n","value":"v","norm":"v"}]}}`))
-			if err != nil {
-				t.Fatalf("encrypt response error: %v", err)
-			}
-			_, _ = w.Write([]byte(cipherText))
-		default:
-			t.Fatalf("unexpected path: %s", r.URL.Path)
-		}
-	}))
+	srv := newDialogAPITestServer(t)
 	defer srv.Close()
 
-	cfg := &config.Config{
-		AppID:   "appid",
-		Token:   "token",
-		AESKey:  testAESKey,
-		Account: "admin",
-		BaseURL: srv.URL,
-		Cache:   cache.NewMemory(),
-	}
-	d := NewDialog(&aispeechContext.Context{
-		Config:                   cfg,
-		AccessTokenContextHandle: NewAccessToken(cfg),
-	})
-
-	importRes, err := d.ImportJSON(&ImportJSONRequest{
-		Mode: 0,
-		Data: []BotIntent{{
-			Skill:     "售前咨询",
-			Intent:    "查询营业时间",
-			Disable:   false,
-			Questions: []string{"你们几点开门"},
-			Answers:   []string{"9:00-18:00"},
-		}},
-	})
-	if err != nil || importRes.TaskID != "task-import" || importRes.RequestID != "import-rid" {
-		t.Fatalf("ImportJSON = %+v, %v", importRes, err)
-	}
-
-	publishRes, err := d.Publish()
-	if err != nil || publishRes.TaskID != "task-publish" {
-		t.Fatalf("Publish = %+v, %v", publishRes, err)
-	}
-
-	progressRes, err := d.GetEffectiveProgress(&EffectiveProgressRequest{Env: "online"})
-	if err != nil || progressRes.Progress != 100 {
-		t.Fatalf("GetEffectiveProgress = %+v, %v", progressRes, err)
-	}
-
-	fetchRes, err := d.FetchAsync(&FetchAsyncRequest{TaskID: "task-import"})
-	if err != nil || fetchRes.State != 2 || len(fetchRes.SuccessSkillInfo) != 1 {
-		t.Fatalf("FetchAsync = %+v, %v", fetchRes, err)
-	}
-
-	queryRes, err := d.Query(&QueryRequest{Query: "你好", Env: "online"})
-	if err != nil || queryRes.Answer != "你好呀" || queryRes.RequestID != "query-rid" {
-		t.Fatalf("Query = %+v, %v", queryRes, err)
-	}
+	d := newTestDialog(srv.URL)
+	assertDialogImportJSON(t, d)
+	assertDialogPublish(t, d)
+	assertDialogProgress(t, d)
+	assertDialogFetchAsync(t, d)
+	assertDialogQuery(t, d)
 }
 
 func TestDialogEmptyAccessToken(t *testing.T) {
@@ -262,26 +172,17 @@ func TestDialogEmptyAccessToken(t *testing.T) {
 func TestDialogAPIError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/v2/token":
-			_, _ = w.Write([]byte(`{"code":0,"msg":"success","request_id":"token-rid","data":{"access_token":"access-token"}}`))
-		case "/v2/bot/import/json":
-			_, _ = w.Write([]byte(`{"code":210202,"msg":"权限不足","request_id":"import-rid","data":{"reason":"forbidden"}}`))
+		case tokenPath:
+			_, _ = w.Write([]byte(accessTokenResponse(testTokenRequestID)))
+		case importJSONPath:
+			_, _ = w.Write([]byte(`{"code":210202,"msg":"forbidden","request_id":"import-rid","data":{"reason":"forbidden"}}`))
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 	}))
 	defer srv.Close()
 
-	cfg := &config.Config{
-		AppID:   "appid",
-		Token:   "token",
-		BaseURL: srv.URL,
-		Cache:   cache.NewMemory(),
-	}
-	d := NewDialog(&aispeechContext.Context{
-		Config:                   cfg,
-		AccessTokenContextHandle: NewAccessToken(cfg),
-	})
+	d := newTestDialog(srv.URL)
 
 	_, err := d.ImportJSON(&ImportJSONRequest{})
 	if err == nil {
@@ -291,7 +192,7 @@ func TestDialogAPIError(t *testing.T) {
 	if !ok {
 		t.Fatalf("ImportJSON error should be *APIError but %T", err)
 	}
-	if apiErr.Code != 210202 || apiErr.Msg != "权限不足" || apiErr.RequestID != "import-rid" {
+	if apiErr.Code != 210202 || apiErr.Msg != "forbidden" || apiErr.RequestID != testImportRequest {
 		t.Fatalf("bad api error: %+v", apiErr)
 	}
 	if string(apiErr.Data) != `{"reason":"forbidden"}` {
@@ -302,29 +203,19 @@ func TestDialogAPIError(t *testing.T) {
 func TestQueryPlainJSONError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/v2/token":
-			_, _ = w.Write([]byte(`{"code":0,"msg":"success","request_id":"token-rid","data":{"access_token":"access-token"}}`))
-		case "/v2/bot/query":
-			_, _ = w.Write([]byte(`{"code":110002,"msg":"参数错误","request_id":"query-rid"}`))
+		case tokenPath:
+			_, _ = w.Write([]byte(accessTokenResponse(testTokenRequestID)))
+		case queryPath:
+			_, _ = w.Write([]byte(`{"code":110002,"msg":"bad param","request_id":"query-rid"}`))
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 	}))
 	defer srv.Close()
 
-	cfg := &config.Config{
-		AppID:   "appid",
-		Token:   "token",
-		AESKey:  testAESKey,
-		BaseURL: srv.URL,
-		Cache:   cache.NewMemory(),
-	}
-	d := NewDialog(&aispeechContext.Context{
-		Config:                   cfg,
-		AccessTokenContextHandle: NewAccessToken(cfg),
-	})
+	d := newTestDialog(srv.URL)
 
-	_, err := d.Query(&QueryRequest{Query: "你好"})
+	_, err := d.Query(&QueryRequest{Query: testQuery})
 	if err == nil {
 		t.Fatal("Query should return error")
 	}
@@ -332,9 +223,174 @@ func TestQueryPlainJSONError(t *testing.T) {
 	if !ok {
 		t.Fatalf("Query error should be *APIError but %T", err)
 	}
-	if apiErr.Code != 110002 || apiErr.RequestID != "query-rid" {
+	if apiErr.Code != 110002 || apiErr.RequestID != testQueryRequestID {
 		t.Fatalf("bad api error: %+v", apiErr)
 	}
+}
+
+func newDialogAPITestServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := readBody(t, r)
+		assertSign(t, r, testToken, body)
+		switch r.URL.Path {
+		case tokenPath:
+			handleDialogToken(t, w, r)
+		case importJSONPath:
+			handleDialogImport(t, w, r, body)
+		case publishPath:
+			handleDialogPublish(t, w, r, body)
+		case effectiveProgressPath:
+			assertToken(t, r)
+			_, _ = w.Write([]byte(`{"code":0,"msg":"success","request_id":"progress-rid","data":{"end_time":"","progress":100,"status":1}}`))
+		case fetchAsyncPath:
+			assertToken(t, r)
+			_, _ = w.Write([]byte(`{"code":0,"msg":"success","request_id":"fetch-rid","data":{"state":2,"msg":"","progress":100,"start":1,"end":2,"url":"","success_skill_info":[{"id":1,"name":"AAA","intents":[{"id":2,"name":"BBB"}]}]}}`))
+		case queryPath:
+			handleDialogQuery(t, w, r, body)
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+}
+
+func handleDialogToken(t *testing.T, w http.ResponseWriter, r *http.Request) {
+	t.Helper()
+	if r.Header.Get("X-APPID") != testAppID {
+		t.Fatalf("bad X-APPID: %s", r.Header.Get("X-APPID"))
+	}
+	_, _ = w.Write([]byte(accessTokenResponse(testTokenRequestID)))
+}
+
+func handleDialogImport(t *testing.T, w http.ResponseWriter, r *http.Request, body []byte) {
+	t.Helper()
+	assertToken(t, r)
+	var req ImportJSONRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatalf("bad import body: %v", err)
+	}
+	if len(req.Data) != 1 || req.Data[0].Skill != "pre-sale" {
+		t.Fatalf("bad import request: %+v", req)
+	}
+	_, _ = w.Write([]byte(`{"code":0,"msg":"success","request_id":"import-rid","data":{"task_id":"task-import"}}`))
+}
+
+func handleDialogPublish(t *testing.T, w http.ResponseWriter, r *http.Request, body []byte) {
+	t.Helper()
+	assertToken(t, r)
+	if len(body) != 0 {
+		t.Fatalf("publish body should be empty: %s", body)
+	}
+	_, _ = w.Write([]byte(`{"code":0,"msg":"success","request_id":"publish-rid","data":{"task_id":"task-publish"}}`))
+}
+
+func handleDialogQuery(t *testing.T, w http.ResponseWriter, r *http.Request, body []byte) {
+	t.Helper()
+	assertToken(t, r)
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "text/plain") {
+		t.Fatalf("bad content type: %s", r.Header.Get("Content-Type"))
+	}
+	plain, err := encryptor.Decrypt(testAESKey, string(body))
+	if err != nil {
+		t.Fatalf("decrypt query body error: %v", err)
+	}
+	var req QueryRequest
+	if err = json.Unmarshal(plain, &req); err != nil {
+		t.Fatalf("bad query body: %v", err)
+	}
+	if req.Query != testQuery {
+		t.Fatalf("bad query: %+v", req)
+	}
+	_, _ = w.Write([]byte(encryptQueryResponse(t)))
+}
+
+func assertDialogImportJSON(t *testing.T, d *Dialog) {
+	t.Helper()
+	res, err := d.ImportJSON(&ImportJSONRequest{
+		Mode: 0,
+		Data: []BotIntent{{
+			Skill:     "pre-sale",
+			Intent:    "business-hours",
+			Disable:   false,
+			Questions: []string{"when are you open"},
+			Answers:   []string{"9:00-18:00"},
+		}},
+	})
+	if err != nil || res.TaskID != testImportTaskID || res.RequestID != testImportRequest {
+		t.Fatalf("ImportJSON = %+v, %v", res, err)
+	}
+}
+
+func assertDialogPublish(t *testing.T, d *Dialog) {
+	t.Helper()
+	res, err := d.Publish()
+	if err != nil || res.TaskID != testPublishTaskID {
+		t.Fatalf("Publish = %+v, %v", res, err)
+	}
+}
+
+func assertDialogProgress(t *testing.T, d *Dialog) {
+	t.Helper()
+	res, err := d.GetEffectiveProgress(&EffectiveProgressRequest{Env: "online"})
+	if err != nil || res.Progress != 100 {
+		t.Fatalf("GetEffectiveProgress = %+v, %v", res, err)
+	}
+}
+
+func assertDialogFetchAsync(t *testing.T, d *Dialog) {
+	t.Helper()
+	res, err := d.FetchAsync(&FetchAsyncRequest{TaskID: testImportTaskID})
+	if err != nil || res.State != 2 || len(res.SuccessSkillInfo) != 1 {
+		t.Fatalf("FetchAsync = %+v, %v", res, err)
+	}
+}
+
+func assertDialogQuery(t *testing.T, d *Dialog) {
+	t.Helper()
+	res, err := d.Query(&QueryRequest{Query: testQuery, Env: "online"})
+	if err != nil || res.Answer != testQueryAnswer || res.RequestID != testQueryRequestID {
+		t.Fatalf("Query = %+v, %v", res, err)
+	}
+}
+
+func newTestDialog(baseURL string) *Dialog {
+	cfg := testDialogConfig(baseURL)
+	return NewDialog(&aispeechContext.Context{
+		Config:                   cfg,
+		AccessTokenContextHandle: NewAccessToken(cfg),
+	})
+}
+
+func testDialogConfig(baseURL string) *config.Config {
+	return &config.Config{
+		AppID:   testAppID,
+		Token:   testToken,
+		AESKey:  testAESKey,
+		Account: testAccount,
+		BaseURL: baseURL,
+		Cache:   cache.NewMemory(),
+	}
+}
+
+func accountAccessTokenResponse(account string) string {
+	return `{"code":0,"msg":"success","request_id":"rid","data":{"access_token":"` + account + `-token"}}`
+}
+
+func accessTokenResponse(requestID string) string {
+	return `{"code":0,"msg":"success","request_id":"` + requestID + `","data":{"access_token":"` + testAccessToken + `"}}`
+}
+
+func encryptQueryResponse(t *testing.T) string {
+	t.Helper()
+	cipherText, err := encryptor.Encrypt(testAESKey, []byte(queryResponse()))
+	if err != nil {
+		t.Fatalf("encrypt response error: %v", err)
+	}
+	return cipherText
+}
+
+func queryResponse() string {
+	return `{"code":0,"msg":"success","request_id":"query-rid","data":{"answer":"hello answer","answer_type":"text","skill_name":"skill","intent_name":"intent","msg_id":"msg","status":"FAQ","slots":[{"name":"n","value":"v","norm":"v"}]}}`
 }
 
 func readBody(t *testing.T, r *http.Request) []byte {
@@ -348,7 +404,7 @@ func readBody(t *testing.T, r *http.Request) []byte {
 
 func assertToken(t *testing.T, r *http.Request) {
 	t.Helper()
-	if r.Header.Get("X-OPENAI-TOKEN") != "access-token" {
+	if r.Header.Get("X-OPENAI-TOKEN") != testAccessToken {
 		t.Fatalf("bad X-OPENAI-TOKEN: %s", r.Header.Get("X-OPENAI-TOKEN"))
 	}
 }
